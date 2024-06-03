@@ -112,6 +112,13 @@ BenchmarkConfig CLIConfigParser::parse_cli_options(const cxxopts::ParseResult& p
     std::cout << "- Executing items until max duration is up:" << std::endl;
   }
 
+  const auto max_warmup_runs = parse_result["warmup-runs"].as<int64_t>();
+  if (max_warmup_runs >= 0) {
+    std::cout << "- Max warmup runs per item is " << max_warmup_runs << std::endl;
+  } else {
+    std::cout << "- Warming up items until max warmup time is up:" << std::endl;
+  }
+
   const auto max_duration = parse_result["time"].as<uint64_t>();
   std::cout << "- Max duration per item is " << max_duration << " seconds" << std::endl;
   const Duration timeout_duration = std::chrono::seconds{max_duration};
@@ -166,6 +173,7 @@ BenchmarkConfig CLIConfigParser::parse_cli_options(const cxxopts::ParseResult& p
                          chunk_indexes,
                          table_indexes,
                          max_runs,
+                         max_warmup_runs,
                          timeout_duration,
                          warmup_duration,
                          output_file_path,

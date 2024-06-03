@@ -1,4 +1,6 @@
 #include "topology.hpp"
+#define HYRISE_NUMA_SUPPORT 0
+// PIN_HOOK: force turn off numa support
 
 #if HYRISE_NUMA_SUPPORT
 
@@ -122,10 +124,13 @@ void Topology::_init_non_numa_topology(uint32_t max_num_cores) {
   _clear();
   _fake_numa_topology = false;
 
-  _num_cpus = std::thread::hardware_concurrency();
-  if (max_num_cores != 0) {
-    _num_cpus = std::min(_num_cpus, max_num_cores);
-  }
+  // _num_cpus = std::thread::hardware_concurrency();
+  // if (max_num_cores != 0) {
+  //   _num_cpus = std::min(_num_cpus, max_num_cores);
+  // }
+  // DEBUG: force to use max_num_cores
+  _num_cpus = max_num_cores;
+  fprintf(stderr, "Using _init_non_numa_topology, num_workers %d\n", _num_cpus); 
 
   auto cpus = std::vector<TopologyCpu>();
 
@@ -141,10 +146,13 @@ void Topology::_init_fake_numa_topology(uint32_t max_num_workers, uint32_t worke
   _clear();
   _fake_numa_topology = true;
 
-  auto num_workers = std::thread::hardware_concurrency();
-  if (max_num_workers != 0) {
-    num_workers = std::min<uint32_t>(num_workers, max_num_workers);
-  }
+  // auto num_workers = std::thread::hardware_concurrency();
+  // if (max_num_workers != 0) {
+  //   num_workers = std::min<uint32_t>(num_workers, max_num_workers);
+  // }
+
+  // DEBUG: force to use max_num_cores
+  auto num_workers = max_num_workers;
 
   auto num_nodes = num_workers / workers_per_node;
   if (num_workers % workers_per_node != 0) {

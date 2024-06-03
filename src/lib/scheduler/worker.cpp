@@ -13,6 +13,8 @@
 #include "hyrise.hpp"
 #include "shutdown_task.hpp"
 #include "task_queue.hpp"
+#define HYRISE_NUMA_SUPPORT 0
+// PIN_HOOK: force turn off numa support
 
 namespace {
 

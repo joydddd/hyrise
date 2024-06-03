@@ -21,7 +21,7 @@ class BenchmarkConfig {
  public:
   BenchmarkConfig(const BenchmarkMode init_benchmark_mode, const ChunkOffset init_chunk_size,
                   const EncodingConfig& init_encoding_config, const bool init_chunk_indexes,
-                  const bool init_table_indexes, const int64_t init_max_runs, const Duration& init_max_duration,
+                  const bool init_table_indexes, const int64_t init_max_runs, const int64_t init_max_warmup_runs, const Duration& init_max_duration,
                   const Duration& init_warmup_duration, const std::optional<std::string>& init_output_file_path,
                   const bool init_enable_scheduler, const uint32_t init_cores,
                   const uint32_t init_data_preparation_cores, const uint32_t init_clients,
@@ -37,6 +37,7 @@ class BenchmarkConfig {
   bool chunk_indexes{false};
   bool table_indexes{false};
   int64_t max_runs{-1};
+  int64_t max_warmup_runs{-1};
   Duration max_duration{std::chrono::seconds{60}};
   Duration warmup_duration{0};
   std::optional<std::string> output_file_path{};

@@ -2,6 +2,7 @@
 cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 
 project(Hyrise)
+add_compile_options(-Wno-gnu-statement-expression)
 
 if(APPLE)
     set(CMAKE_EXE_LINKER_FLAGS -Wl,-export_dynamic)

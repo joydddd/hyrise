@@ -93,6 +93,26 @@ BenchmarkRunner::BenchmarkRunner(const BenchmarkConfig& config,
   }
 }
 
+/* used for pin tool */
+/* PIN_HOOK */
+
+#include <stdio.h>
+#include <sys/time.h>
+struct timeval  roi_tick, roi_tock;
+#include "sim_api.h"
+
+void pin_start() asm("pin_hook_init");
+void pin_stop() asm("pin_hook_fini");
+__attribute_noinline__ void pin_start() { fprintf(stderr, "PIN START\n"); gettimeofday(&roi_tick, NULL);
+   SimRoiStart();}
+__attribute_noinline__ void pin_stop() { fprintf(stderr, "PIN END\n"); gettimeofday(&roi_tock, NULL);
+    fprintf (stderr, "Kernel time = %f seconds\n",
+         (double) (roi_tock.tv_usec - roi_tick.tv_usec) / 1000000 +
+         (double) (roi_tock.tv_sec - roi_tick.tv_sec));
+    SimRoiEnd();}
+
+/* PIN_HOOK */
+
 void BenchmarkRunner::run() {
   std::cout << "- Starting Benchmark..." << std::endl;
 
@@ -238,6 +258,8 @@ void BenchmarkRunner::_benchmark_shuffled() {
     _warmup(item_id);
   }
 
+  fprintf(stderr, "Finish warmup\n");
+
   // For shuffling the item order.
   std::random_device random_device;
   std::mt19937 random_generator(random_device());
@@ -246,8 +268,12 @@ void BenchmarkRunner::_benchmark_shuffled() {
 
   _state = BenchmarkState{_config.max_duration};
 
+  
+  pin_start();
+  size_t warp_items = _total_finished_runs.load(std::memory_order_relaxed);
+  size_t item_scheduled = 0;
   while (_state.keep_running() && (_config.max_runs < 0 || _total_finished_runs.load(std::memory_order_relaxed) <
-                                                               static_cast<size_t>(_config.max_runs))) {
+                                                               static_cast<size_t>(_config.max_runs) + warp_items)) {
     // We want to only schedule as many items simultaneously as we have simulated clients.
     if (_currently_running_clients.load(std::memory_order_relaxed) < _config.clients) {
       if (item_ids_shuffled.empty()) {
@@ -257,12 +283,14 @@ void BenchmarkRunner::_benchmark_shuffled() {
 
       const auto item_id = item_ids_shuffled.back();
       item_ids_shuffled.pop_back();
-
       _schedule_item_run(item_id);
+      if (item_scheduled % 100 == 0)fprintf(stderr, "[ITEM] #%lu\n", item_scheduled);
+      item_scheduled++;
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
+  pin_stop();
   _state.set_done();
 
   for (auto& result : _results) {
@@ -290,6 +318,7 @@ void BenchmarkRunner::_benchmark_ordered() {
 
     _state = BenchmarkState{_config.max_duration};
 
+    pin_start();
     while (_state.keep_running() &&
            (_config.max_runs < 0 || (result.successful_runs.size() + result.unsuccessful_runs.size()) <
                                         static_cast<size_t>(_config.max_runs))) {
@@ -300,6 +329,7 @@ void BenchmarkRunner::_benchmark_ordered() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
     }
+    pin_stop();
     _state.set_done();
 
     // Wait for the rest of the tasks that didn't make it in time - they will not count toward the results.
@@ -387,14 +417,18 @@ void BenchmarkRunner::_warmup(const BenchmarkItemID item_id) {
 
   _state = BenchmarkState{_config.warmup_duration};
 
-  while (_state.keep_running()) {
+  size_t num_warpup_items = 0;
+  while (_state.keep_running() && num_warpup_items < static_cast<size_t>(_config.max_warmup_runs)) {
     // We want to only schedule as many items simultaneously as we have simulated clients.
     if (_currently_running_clients.load(std::memory_order_relaxed) < _config.clients) {
       _schedule_item_run(item_id);
+      if (num_warpup_items % 100 == 0)fprintf(stderr, "[WARMUP] #%lu\n", num_warpup_items);
+      num_warpup_items++;
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
+  fprintf(stderr, "Finish warmup w %zu items \n", num_warpup_items);
 
   // Clear the results.
   _results[item_id].successful_runs = {};
@@ -540,6 +574,7 @@ cxxopts::Options BenchmarkRunner::get_basic_cli_options(const std::string& bench
     ("c,chunk_size", "Chunk size", cxxopts::value<ChunkOffset>()->default_value(std::to_string(Chunk::DEFAULT_SIZE)))
     ("t,time", "Runtime - per item for Ordered, total for Shuffled", cxxopts::value<uint64_t>()->default_value("60"))
     ("w,warmup", "Number of seconds that each item is run for warm up. Warming up also caches the query plans", cxxopts::value<uint64_t>()->default_value("0"))  // NOLINT(whitespace/line_length)
+    ("warmup-runs", "Maximum number of runs per item for warmup, negative values mean infinity", cxxopts::value<int64_t>()->default_value("-1"))  // NOLINT(whitespace/line_length)
     ("o,output", "JSON file to output results to, don't specify for stdout", cxxopts::value<std::string>()->default_value(""))  // NOLINT(whitespace/line_length)
     ("m,mode", "Ordered or Shuffled", cxxopts::value<std::string>()->default_value(default_mode))
     ("e,encoding", "Specify Chunk encoding as a string or as a JSON config file (for more detailed configuration, see --full_help). String options: " + all_encoding_options(), cxxopts::value<std::string>()->default_value("Dictionary"))  // NOLINT(whitespace/line_length)
@@ -588,6 +623,7 @@ nlohmann::json BenchmarkRunner::create_context(const BenchmarkConfig& config) {
                         {"chunk_indexes", config.chunk_indexes},
                         {"benchmark_mode", magic_enum::enum_name(config.benchmark_mode)},
                         {"max_runs", config.max_runs},
+                        {"max_warmup_runs", config.max_warmup_runs},
                         {"max_duration", config.max_duration.count()},
                         {"warmup_duration", config.warmup_duration.count()},
                         {"using_scheduler", config.enable_scheduler},
